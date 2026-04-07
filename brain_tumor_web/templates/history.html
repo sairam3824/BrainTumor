@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Brain Tumor Studio | History{% endblock %}
+
+{% block content %}
+<main class="history-page" data-history-page="true">
+  <section class="glass-card page-heading">
+    <div>
+      <p class="card-label">Analysis History</p>
+      <h1>Stored analysis timeline</h1>
+      <p>Every completed run is listed here so you can review prior analyses and compare outcomes.</p>
+    </div>
+    <a class="button button-primary" href="{{ url_for('analyze') }}">Run New Analysis</a>
+  </section>
+
+  <section id="history-empty" class="glass-card empty-state" {% if history %}hidden{% endif %}>
+    <h2>No history yet</h2>
+    <p>Once you complete an analysis, it will appear here automatically.</p>
+  </section>
+
+  <section id="history-list" class="history-list">
+    {% for item in history %}
+    <article class="glass-card history-card">
+      <div class="history-card__media">
+        {% if item.input_image_url or item.gradcam_image_url %}
+        <div class="history-media-grid">
+          {% if item.input_image_url %}
+          <figure class="history-media-tile">
+            <a href="{{ item.input_image_url }}" target="_blank" rel="noopener noreferrer">
+              <img src="{{ item.input_image_url }}" alt="Uploaded MRI preview">
+            </a>
+            <figcaption>Input</figcaption>
+          </figure>
+          {% endif %}
+          {% if item.gradcam_image_url %}
+          <figure class="history-media-tile">
+            <a href="{{ item.gradcam_image_url }}" target="_blank" rel="noopener noreferrer">
+              <img src="{{ item.gradcam_image_url }}" alt="Grad-CAM preview">
+            </a>
+            <figcaption>Grad-CAM</figcaption>
+          </figure>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="history-card__body">
+        <p class="card-label">{{ item.created_at }}</p>
+        <h2>{{ item.predicted_label }}</h2>
+        <p>Model: {{ item.selected_model }} | Confidence: {{ item.top_confidence_percent }}%</p>
+        <p class="muted-note">Analysis ID: {{ item.analysis_id }}</p>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}
