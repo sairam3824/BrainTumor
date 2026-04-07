@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Brain Tumor Studio | Home{% endblock %}
+
+{% block content %}
+<main class="home-page">
+  <section class="hero hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Clinical-Style Decision Support</p>
+      <h1>Professional MRI analysis with classifier selection, Grad-CAM, reporting, and history in one workspace.</h1>
+      <p class="lede">
+        Upload a brain MRI slice, run the topology-fused classifier pipeline, inspect the Grad-CAM explainer,
+        and keep every result organized across the Analyze and History pages.
+      </p>
+      <div class="hero-actions">
+        <a class="button button-primary" href="{{ url_for('analyze') }}">Open Analyze</a>
+        <a class="button button-secondary" href="{{ url_for('history_page') }}">View History</a>
+      </div>
+    </div>
+
+    <aside class="glass-card hero-summary">
+      <p class="card-label">Workspace Overview</p>
+      <ul class="stat-list">
+        <li>
+          <span>Default classifier</span>
+          <strong>SVM</strong>
+        </li>
+        <li>
+          <span>Reference accuracy</span>
+          <strong>0.9245</strong>
+        </li>
+        <li>
+          <span>Explainability</span>
+          <strong>Grad-CAM overlay</strong>
+        </li>
+      </ul>
+      {% if latest_report %}
+      <a class="inline-link" href="{{ url_for('history_page') }}">Open recent history</a>
+      {% else %}
+      <span class="muted-note">Run an analysis to generate your first saved result.</span>
+      {% endif %}
+    </aside>
+  </section>
+
+  <section class="feature-grid">
+    <article class="glass-card feature-card">
+      <p class="card-label">Home</p>
+      <h2>Project overview</h2>
+      <p>Use the landing page to orient yourself, jump into analysis, and review the latest available report.</p>
+    </article>
+    <article class="glass-card feature-card">
+      <p class="card-label">Analyze</p>
+      <h2>Interactive inference</h2>
+      <p>Drag and drop images, choose a model, watch preparation progress, and inspect class probabilities.</p>
+    </article>
+    <article class="glass-card feature-card">
+      <p class="card-label">History</p>
+      <h2>Track prior studies</h2>
+      <p>Review prior analyses chronologically, compare outcomes, and keep a running audit trail.</p>
+    </article>
+    <article class="glass-card feature-card">
+      <p class="card-label">Results</p>
+      <h2>Everything in Analyze</h2>
+      <p>The Analyze page now shows the prediction, confidence profile, and Grad-CAM directly without a separate report step.</p>
+    </article>
+  </section>
+
+  <section class="glass-card callout">
+    <div>
+      <p class="card-label">Recommended Flow</p>
+      <h2>Prepare once, analyze many times.</h2>
+      <p>For the fastest experience, run the asset build before opening the app so the Analyze page is instantly ready.</p>
+    </div>
+    <pre class="command-block"><code>python app.py --prepare
+python app.py</code></pre>
+  </section>
+</main>
+{% endblock %}
