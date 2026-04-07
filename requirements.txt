@@ -9,4 +9,5 @@ scikit-learn>=1.5
 scipy>=1.13
 tensorly>=0.9
 torch>=2.2
+waitress>=3.0
 xgboost>=2.1
