@@ -1,0 +1,144 @@
+Brain Tumor Web App: How To Run
+===============================
+
+Files to know:
+- app.py
+- requirements.txt
+- WEBAPP.md
+
+
+Option 1: Conda on macOS
+------------------------
+
+1. Open Terminal
+2. Go to the project folder:
+   cd BrainTumor
+
+3. Create a Conda environment:
+   conda create -n brain-tumor-web python=3.11 -y
+
+4. Activate it:
+   conda activate brain-tumor-web
+
+5. Install dependencies:
+   pip install -r requirements.txt
+
+6. Optional: build cached inference assets first
+   python app.py --prepare
+
+7. Start the app:
+   python app.py
+
+8. Open in browser:
+   http://localhost:8000
+
+
+conda create -n brain-tumor-web python=3.11 -y
+conda activate brain-tumor-web
+pip install -r requirements.txt
+python app.py --prepare
+Option 2: Conda on Windows
+--------------------------
+
+1. Open Anaconda Prompt
+2. Go to the project folder:
+   cd C:\path\to\BrainTumor
+
+3. Create a Conda environment:
+   conda create -n brain-tumor-web python=3.11 -y
+
+4. Activate it:
+   conda activate brain-tumor-web
+
+5. Install dependencies:
+   pip install -r requirements.txt
+
+6. Optional: build cached inference assets first
+   python app.py --prepare
+
+7. Start the app:
+   python app.py
+
+8. Open in browser:
+   http://localhost:8000
+
+
+Option 3: Virtual Environment on macOS
+--------------------------------------
+
+1. Open Terminal
+2. Go to the project folder:
+   cd /Users/sairammaruri/Desktop/BrainTumor
+
+3. Create a virtual environment:
+   python3 -m venv .venv
+
+4. Activate it:
+   source .venv/bin/activate
+
+5. Upgrade pip:
+   python -m pip install --upgrade pip
+
+6. Install dependencies:
+   pip install -r requirements.txt
+
+7. Optional: build cached inference assets first
+   python app.py --prepare
+
+8. Start the app:
+   python app.py
+
+9. Open in browser:
+   http://localhost:8000
+
+
+Option 4: Virtual Environment on Windows
+----------------------------------------
+
+1. Open Command Prompt or PowerShell
+2. Go to the project folder:
+   cd C:\path\to\BrainTumor
+
+3. Create a virtual environment:
+   py -m venv .venv
+
+4. Activate it:
+   .venv\Scripts\activate
+
+5. Upgrade pip:
+   python -m pip install --upgrade pip
+
+6. Install dependencies:
+   pip install -r requirements.txt
+
+7. Optional: build cached inference assets first
+   python app.py --prepare
+
+8. Start the app:
+   python app.py
+
+9. Open in browser:
+   http://localhost:8000
+
+
+Useful Notes
+------------
+
+- First run can take time because the app may build cached assets under:
+  output/webapp_artifacts/
+
+- If you only want to prepare the models first:
+  python app.py --prepare
+
+- If port 8000 is busy:
+  python app.py --port 8080
+
+- To stop the app:
+  Press Ctrl+C
+
+- If you are already inside an environment, check with:
+  python --version
+  which python
+
+- On Windows, use this instead of "which python":
+  where python
