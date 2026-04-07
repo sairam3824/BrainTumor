@@ -149,4 +149,7 @@ cython_debug/
 
 # Data and Outputs
 data/
-output/
+# Large binary and output files (exceeding GitHub's 100MB limit)
+output/metrics/*.npy
+output/models/extra_trees.joblib
+output/webapp_data/

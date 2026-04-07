@@ -1,0 +1,323 @@
+{
+  "pipeline": "Topology-Fused Tensor Learning",
+  "run_mode": "FAST_KAGGLE_MODE",
+  "runtime_flags": {
+    "RUN_CNN_BASELINE": false,
+    "RUN_TENSOR_NETWORK_BENCHMARK": false,
+    "RUN_CROSS_DATASET": false,
+    "RUN_ABLATION": false,
+    "RUN_GRID_SEARCH": false,
+    "RUN_NUM_ITERATIONS": 1,
+    "RUN_CV_FOLDS": 3
+  },
+  "novel_contributions": [
+    "Multi-scale persistent homology (H0+H1)",
+    "TDA-weighted Tucker decomposition",
+    "Tucker + TDA feature fusion",
+    "CNN baseline with topology-aware regularization",
+    "Tensor-network comparison with TT/TR alternatives",
+    "Explainability alignment between TDA ROIs and CNN saliency maps",
+    "Cross-dataset generalization evaluation",
+    "Hyperparameter-tuned classifiers with stratified k-fold CV",
+    "Quantitative ROI evaluation"
+  ],
+  "dataset": {
+    "train_samples": 5712,
+    "test_samples": 1311,
+    "image_size": 250,
+    "classes": [
+      "glioma",
+      "meningioma",
+      "notumor",
+      "pituitary"
+    ]
+  },
+  "tda_config": {
+    "scales": [
+      10,
+      20
+    ],
+    "max_homology_dim": 1,
+    "h1_max_points": 180,
+    "tda_feature_dims": 440
+  },
+  "tucker_config": {
+    "default_rank": [
+      30,
+      30,
+      300
+    ],
+    "fast_rank": [
+      16,
+      16,
+      64
+    ],
+    "standard_tucker_time": 649.5864388942719,
+    "weighted_tucker_time": 85.12953782081604,
+    "max_train_samples": 1200
+  },
+  "fusion_info_standard": {
+    "tucker_dims": 900,
+    "tda_dims": 440,
+    "concat_dims": 1340,
+    "fused_dims": "425",
+    "variance_retained": 99.00124975931574,
+    "fusion_time": 2.4686264991760254
+  },
+  "fusion_info_novel": {
+    "tucker_dims": 256,
+    "tda_dims": 440,
+    "concat_dims": 696,
+    "fused_dims": "407",
+    "variance_retained": "99.00837",
+    "fusion_time": 0.5974941253662109
+  },
+  "roi_evaluation": {
+    "tda_roi_stats": {
+      "coverage_per_class": {
+        "glioma": {
+          "mean_area": 0.020055485238455715,
+          "std_area": 0.019578923928314753,
+          "min_area": 0.000192,
+          "max_area": 0.13912,
+          "n_samples": 1321
+        },
+        "meningioma": {
+          "mean_area": 0.022371106796116504,
+          "std_area": 0.02220550342706479,
+          "min_area": 1.6e-05,
+          "max_area": 0.140864,
+          "n_samples": 1339
+        },
+        "notumor": {
+          "mean_area": 0.0221376,
+          "std_area": 0.02613379347103494,
+          "min_area": 1.6e-05,
+          "max_area": 0.140944,
+          "n_samples": 1595
+        },
+        "pituitary": {
+          "mean_area": 0.013524853809196978,
+          "std_area": 0.013032461346078718,
+          "min_area": 0.000672,
+          "max_area": 0.123136,
+          "n_samples": 1457
+        }
+      },
+      "discriminability": -0.003487118052076934
+    },
+    "cnn_explainability_alignment": null
+  },
+  "cnn_results": null,
+  "tensor_network_benchmark": null,
+  "cross_dataset_generalization": null,
+  "best_model": "SVM",
+  "all_model_results": {
+    "Extra Trees": {
+      "avg_metrics": {
+        "Accuracy": 0.8398,
+        "F1 Score": 0.8326,
+        "Precision": 0.8517,
+        "Recall": 0.8398
+      },
+      "std_metrics": {
+        "Accuracy": 0.0,
+        "F1 Score": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0
+      },
+      "best_params": {
+        "n_estimators": "300",
+        "max_features": "sqrt",
+        "random_state": "42",
+        "n_jobs": "-1"
+      },
+      "raw_scores": {
+        "Accuracy": [
+          0.8398
+        ],
+        "F1 Score": [
+          0.8326
+        ],
+        "Precision": [
+          0.8517
+        ],
+        "Recall": [
+          0.8398
+        ]
+      }
+    },
+    "Random Forest": {
+      "avg_metrics": {
+        "Accuracy": 0.8505,
+        "F1 Score": 0.8447,
+        "Precision": 0.8586,
+        "Recall": 0.8505
+      },
+      "std_metrics": {
+        "Accuracy": 0.0,
+        "F1 Score": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0
+      },
+      "best_params": {
+        "n_estimators": "300",
+        "max_features": "sqrt",
+        "random_state": "42",
+        "n_jobs": "-1"
+      },
+      "raw_scores": {
+        "Accuracy": [
+          0.8505
+        ],
+        "F1 Score": [
+          0.8447
+        ],
+        "Precision": [
+          0.8586
+        ],
+        "Recall": [
+          0.8505
+        ]
+      }
+    },
+    "XGBoost": {
+      "avg_metrics": {
+        "Accuracy": 0.8902,
+        "F1 Score": 0.8889,
+        "Precision": 0.8904,
+        "Recall": 0.8902
+      },
+      "std_metrics": {
+        "Accuracy": 0.0,
+        "F1 Score": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0
+      },
+      "best_params": {
+        "tree_method": "hist",
+        "device": "cuda",
+        "objective": "multi:softprob",
+        "num_class": "4",
+        "eval_metric": "mlogloss",
+        "n_jobs": "-1",
+        "random_state": "42"
+      },
+      "raw_scores": {
+        "Accuracy": [
+          0.8902
+        ],
+        "F1 Score": [
+          0.8889
+        ],
+        "Precision": [
+          0.8904
+        ],
+        "Recall": [
+          0.8902
+        ]
+      }
+    },
+    "LightGBM": {
+      "avg_metrics": {
+        "Accuracy": 0.9016,
+        "F1 Score": 0.9,
+        "Precision": 0.9042,
+        "Recall": 0.9016
+      },
+      "std_metrics": {
+        "Accuracy": 0.0,
+        "F1 Score": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0
+      },
+      "best_params": {
+        "n_estimators": "300",
+        "random_state": "42",
+        "n_jobs": "-1",
+        "verbose": "-1"
+      },
+      "raw_scores": {
+        "Accuracy": [
+          0.9016
+        ],
+        "F1 Score": [
+          0.9
+        ],
+        "Precision": [
+          0.9042
+        ],
+        "Recall": [
+          0.9016
+        ]
+      }
+    },
+    "SVM": {
+      "avg_metrics": {
+        "Accuracy": 0.9245,
+        "F1 Score": 0.9238,
+        "Precision": 0.9241,
+        "Recall": 0.9245
+      },
+      "std_metrics": {
+        "Accuracy": 0.0,
+        "F1 Score": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0
+      },
+      "best_params": {
+        "kernel": "rbf",
+        "random_state": "42"
+      },
+      "raw_scores": {
+        "Accuracy": [
+          0.9245
+        ],
+        "F1 Score": [
+          0.9238
+        ],
+        "Precision": [
+          0.9241
+        ],
+        "Recall": [
+          0.9245
+        ]
+      }
+    },
+    "KNN": {
+      "avg_metrics": {
+        "Accuracy": 0.8932,
+        "F1 Score": 0.8901,
+        "Precision": 0.8918,
+        "Recall": 0.8932
+      },
+      "std_metrics": {
+        "Accuracy": 0.0,
+        "F1 Score": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0
+      },
+      "best_params": {
+        "n_neighbors": "5",
+        "n_jobs": "-1"
+      },
+      "raw_scores": {
+        "Accuracy": [
+          0.8932
+        ],
+        "F1 Score": [
+          0.8901
+        ],
+        "Precision": [
+          0.8918
+        ],
+        "Recall": [
+          0.8932
+        ]
+      }
+    }
+  },
+  "ablation_summary": {},
+  "total_time_seconds": 854.410980463028,
+  "total_time_formatted": "00:14:14"
+}

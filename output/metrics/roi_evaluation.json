@@ -1,0 +1,33 @@
+{
+  "coverage_per_class": {
+    "glioma": {
+      "mean_area": 0.020055485238455715,
+      "std_area": 0.019578923928314753,
+      "min_area": 0.000192,
+      "max_area": 0.13912,
+      "n_samples": 1321
+    },
+    "meningioma": {
+      "mean_area": 0.022371106796116504,
+      "std_area": 0.02220550342706479,
+      "min_area": 1.6e-05,
+      "max_area": 0.140864,
+      "n_samples": 1339
+    },
+    "notumor": {
+      "mean_area": 0.0221376,
+      "std_area": 0.02613379347103494,
+      "min_area": 1.6e-05,
+      "max_area": 0.140944,
+      "n_samples": 1595
+    },
+    "pituitary": {
+      "mean_area": 0.013524853809196978,
+      "std_area": 0.013032461346078718,
+      "min_area": 0.000672,
+      "max_area": 0.123136,
+      "n_samples": 1457
+    }
+  },
+  "discriminability": -0.003487118052076934
+}
