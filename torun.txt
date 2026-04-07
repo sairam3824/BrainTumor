@@ -3,6 +3,8 @@ Brain Tumor Web App: How To Run
 
 Files to know:
 - app.py
+- serve.py
+- wsgi.py
 - requirements.txt
 - WEBAPP.md
 
@@ -32,11 +34,11 @@ Option 1: Conda on macOS
 8. Open in browser:
    http://localhost:8000
 
+9. Production-style local server:
+   python serve.py
 
-conda create -n brain-tumor-web python=3.11 -y
-conda activate brain-tumor-web
-pip install -r requirements.txt
-python app.py --prepare
+10. If port 8000 is not available, the app automatically moves to:
+    http://localhost:8001
 Option 2: Conda on Windows
 --------------------------
 
@@ -61,6 +63,12 @@ Option 2: Conda on Windows
 
 8. Open in browser:
    http://localhost:8000
+
+9. Production-style local server:
+   python serve.py
+
+10. If port 8000 is not available, the app automatically moves to:
+    http://localhost:8001
 
 
 Option 3: Virtual Environment on macOS
@@ -91,6 +99,12 @@ Option 3: Virtual Environment on macOS
 9. Open in browser:
    http://localhost:8000
 
+10. Production-style local server:
+    python serve.py
+
+11. If port 8000 is not available, the app automatically moves to:
+    http://localhost:8001
+
 
 Option 4: Virtual Environment on Windows
 ----------------------------------------
@@ -120,6 +134,12 @@ Option 4: Virtual Environment on Windows
 9. Open in browser:
    http://localhost:8000
 
+10. Production-style local server:
+    python serve.py
+
+11. If port 8000 is not available, the app automatically moves to:
+    http://localhost:8001
+
 
 Useful Notes
 ------------
@@ -130,8 +150,13 @@ Useful Notes
 - If you only want to prepare the models first:
   python app.py --prepare
 
-- If port 8000 is busy:
-  python app.py --port 8080
+- If port 8000 is busy, the app automatically tries:
+  http://localhost:8001
+
+- The app pages are:
+  Home: http://localhost:8000/
+  Analyze: http://localhost:8000/analyze
+  History: http://localhost:8000/history
 
 - To stop the app:
   Press Ctrl+C
