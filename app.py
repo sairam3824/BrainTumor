@@ -166,7 +166,22 @@ def main() -> None:
     parser.add_argument("--prepare", action="store_true", help="Build cached inference assets and exit.")
     parser.add_argument("--host", default=os.environ.get("HOST", "localhost"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
+    parser.add_argument(
+        "--tda-mode",
+        choices=["fast", "standard", "full"],
+        default="standard",
+        help=(
+            "TDA feature complexity for first-time build. "
+            "fast: H0 only, 1 scale, no persistence images (~3 min). "
+            "standard: H0+H1, 2 scales, no persistence images (~10 min). "
+            "full: H0+H1, 2 scales, + persistence images (~25 min). "
+            "Ignored if cached assets already exist."
+        ),
+    )
     args = parser.parse_args()
+
+    from brain_tumor_web.inference import apply_tda_mode
+    apply_tda_mode(args.tda_mode)
 
     if args.prepare:
         get_service().prepare_blocking()

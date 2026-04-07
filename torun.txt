@@ -28,8 +28,17 @@ Option 1: Conda on macOS
 6. Optional: build cached inference assets first
    python app.py --prepare
 
+   First-time build speed options (--tda-mode):
+   python app.py --prepare --tda-mode fast       # ~3 min, H0 only, 110 dims
+   python app.py --prepare --tda-mode standard    # ~10 min, H0+H1, 440 dims (default)
+   python app.py --prepare --tda-mode full        # ~25 min, H0+H1 + persistence images, 840 dims
+
+   Use "fast" for quick demos, "standard" for normal use, "full" for final submission.
+   This only affects the first build. After that, cached assets load instantly.
+
 7. Start the app:
    python app.py
+   python app.py --tda-mode fast      (if you want a faster first build)
 
 8. Open in browser:
    http://localhost:8000
@@ -58,8 +67,17 @@ Option 2: Conda on Windows
 6. Optional: build cached inference assets first
    python app.py --prepare
 
+   First-time build speed options (--tda-mode):
+   python app.py --prepare --tda-mode fast       # ~3 min, H0 only, 110 dims
+   python app.py --prepare --tda-mode standard    # ~10 min, H0+H1, 440 dims (default)
+   python app.py --prepare --tda-mode full        # ~25 min, H0+H1 + persistence images, 840 dims
+
+   Use "fast" for quick demos, "standard" for normal use, "full" for final submission.
+   This only affects the first build. After that, cached assets load instantly.
+
 7. Start the app:
    python app.py
+   python app.py --tda-mode fast      (if you want a faster first build)
 
 8. Open in browser:
    http://localhost:8000
@@ -93,8 +111,17 @@ Option 3: Virtual Environment on macOS
 7. Optional: build cached inference assets first
    python app.py --prepare
 
+   First-time build speed options (--tda-mode):
+   python app.py --prepare --tda-mode fast       # ~3 min, H0 only, 110 dims
+   python app.py --prepare --tda-mode standard    # ~10 min, H0+H1, 440 dims (default)
+   python app.py --prepare --tda-mode full        # ~25 min, H0+H1 + persistence images, 840 dims
+
+   Use "fast" for quick demos, "standard" for normal use, "full" for final submission.
+   This only affects the first build. After that, cached assets load instantly.
+
 8. Start the app:
    python app.py
+   python app.py --tda-mode fast      (if you want a faster first build)
 
 9. Open in browser:
    http://localhost:8000
@@ -128,8 +155,17 @@ Option 4: Virtual Environment on Windows
 7. Optional: build cached inference assets first
    python app.py --prepare
 
+   First-time build speed options (--tda-mode):
+   python app.py --prepare --tda-mode fast       # ~3 min, H0 only, 110 dims
+   python app.py --prepare --tda-mode standard    # ~10 min, H0+H1, 440 dims (default)
+   python app.py --prepare --tda-mode full        # ~25 min, H0+H1 + persistence images, 840 dims
+
+   Use "fast" for quick demos, "standard" for normal use, "full" for final submission.
+   This only affects the first build. After that, cached assets load instantly.
+
 8. Start the app:
    python app.py
+   python app.py --tda-mode fast      (if you want a faster first build)
 
 9. Open in browser:
    http://localhost:8000
@@ -147,8 +183,14 @@ Useful Notes
 - First run can take time because the app may build cached assets under:
   output/webapp_artifacts/
 
+- Control first-time build speed with --tda-mode:
+  --tda-mode fast       ~3 min   (H0 only, 1 scale, 110 TDA dims, 6 CNN epochs)
+  --tda-mode standard   ~10 min  (H0+H1, 2 scales, 440 TDA dims, 8 CNN epochs) [default]
+  --tda-mode full       ~25 min  (H0+H1, 2 scales + persistence images, 840 TDA dims, 12 CNN epochs)
+
 - If you only want to prepare the models first:
   python app.py --prepare
+  python app.py --prepare --tda-mode fast
 
 - If port 8000 is busy, the app automatically tries:
   http://localhost:8001

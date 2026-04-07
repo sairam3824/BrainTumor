@@ -29,6 +29,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn import __version__ as sklearn_version
 from tensorly.decomposition import tucker, tensor_train
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
 
 MPLCONFIGDIR = Path(tempfile.gettempdir()) / "brain_tumor_mpl"
@@ -63,6 +65,7 @@ CNN_EPOCHS = 12
 CNN_BATCH_SIZE = 32
 CNN_LEARNING_RATE = 1e-3
 GRADCAM_SMOOTH_SIGMA = 1.5
+USE_PERSISTENCE_IMAGES = True
 HISTORY_LIMIT = 100
 STATUS_PROGRESS = {
     "idle": 0,
@@ -71,6 +74,35 @@ STATUS_PROGRESS = {
     "ready": 100,
     "error": 100,
 }
+
+
+def apply_tda_mode(mode: str) -> None:
+    """Configure TDA feature complexity before building assets.
+
+    fast:     H0 only, single scale, no persistence images  (~3 min first build)
+    standard: H0+H1, 2 scales, no persistence images        (~10 min first build)
+    full:     H0+H1, 2 scales, + persistence images          (~25 min first build)
+    """
+    global TDA_SCALES, TDA_BORDER_WIDTHS, TDA_MAX_HOMOLOGY_DIM, USE_PERSISTENCE_IMAGES, CNN_EPOCHS
+
+    if mode == "fast":
+        TDA_SCALES = [10]
+        TDA_BORDER_WIDTHS = [35]
+        TDA_MAX_HOMOLOGY_DIM = 0
+        USE_PERSISTENCE_IMAGES = False
+        CNN_EPOCHS = 6
+    elif mode == "standard":
+        TDA_SCALES = [10, 20]
+        TDA_BORDER_WIDTHS = [35, 70]
+        TDA_MAX_HOMOLOGY_DIM = 1
+        USE_PERSISTENCE_IMAGES = False
+        CNN_EPOCHS = 8
+    elif mode == "full":
+        TDA_SCALES = [10, 20]
+        TDA_BORDER_WIDTHS = [35, 70]
+        TDA_MAX_HOMOLOGY_DIM = 1
+        USE_PERSISTENCE_IMAGES = True
+        CNN_EPOCHS = 12
 
 
 @dataclass(frozen=True)
@@ -233,7 +265,7 @@ class BrainTumorWebService:
 
     def models_payload(self) -> Dict[str, object]:
         metadata_models = self._metadata.get("all_model_results", {})
-        model_names = list(self._bundle["model_order"]) if self._bundle is not None else ["Extra Trees", "Random Forest", "SVM", "KNN"]
+        model_names = list(self._bundle["model_order"]) if self._bundle is not None else ["Extra Trees", "Random Forest", "XGBoost", "LightGBM", "SVM", "KNN"]
         default_model = self._resolve_default_model(model_names)
 
         models = []
@@ -871,7 +903,8 @@ def compact_feature_from_diagrams(diagrams: Dict[str, np.ndarray]) -> np.ndarray
     for _, dgm in diagrams.items():
         parts.append(persistence_statistics(dgm))
         parts.append(betti_curve(dgm))
-        parts.append(persistence_image(dgm))
+        if USE_PERSISTENCE_IMAGES:
+            parts.append(persistence_image(dgm))
     return np.concatenate(parts).astype(np.float32)
 
 
@@ -882,10 +915,12 @@ def extract_compact_tda_feature(img: np.ndarray) -> np.ndarray:
 def _expected_tda_dim() -> int:
     """Compute the expected dimensionality of TDA feature vectors.
 
-    Per diagram: 10 (stats) + BETTI_CURVE_RESOLUTION (Betti) + PERSISTENCE_IMAGE_RESOLUTION^2 (PI)
+    Per diagram: 10 (stats) + BETTI_CURVE_RESOLUTION (Betti) + optionally PERSISTENCE_IMAGE_RESOLUTION^2 (PI)
     Number of diagrams: len(TDA_SCALES) * (1 + (1 if TDA_MAX_HOMOLOGY_DIM >= 1 else 0))
     """
-    per_dgm = 10 + BETTI_CURVE_RESOLUTION + PERSISTENCE_IMAGE_RESOLUTION ** 2
+    per_dgm = 10 + BETTI_CURVE_RESOLUTION
+    if USE_PERSISTENCE_IMAGES:
+        per_dgm += PERSISTENCE_IMAGE_RESOLUTION ** 2
     n_dgms = len(TDA_SCALES) * (2 if TDA_MAX_HOMOLOGY_DIM >= 1 else 1)
     return per_dgm * n_dgms
 
@@ -1045,6 +1080,17 @@ def train_classifiers(x_train: np.ndarray, y_train: np.ndarray) -> Dict[str, obj
     random_forest = RandomForestClassifier(n_estimators=300, max_features="sqrt", random_state=RANDOM_STATE, n_jobs=-1)
     random_forest.fit(x_train, y_train)
     models["Random Forest"] = random_forest
+
+    xgb = XGBClassifier(
+        objective="multi:softprob", num_class=len(LABELS), eval_metric="mlogloss",
+        tree_method="hist", n_jobs=-1, random_state=RANDOM_STATE, verbosity=0,
+    )
+    xgb.fit(x_train, y_train)
+    models["XGBoost"] = xgb
+
+    lgbm = LGBMClassifier(n_estimators=300, random_state=RANDOM_STATE, n_jobs=-1, verbose=-1)
+    lgbm.fit(x_train, y_train)
+    models["LightGBM"] = lgbm
 
     svm = SVC(kernel="rbf", random_state=RANDOM_STATE, probability=True)
     svm.fit(x_train, y_train)
