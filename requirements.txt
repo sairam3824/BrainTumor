@@ -1,0 +1,12 @@
+Flask>=3.0
+joblib>=1.4
+lightgbm>=4.5
+numpy>=1.26
+opencv-python>=4.10
+Pillow>=10.0
+ripser>=0.6
+scikit-learn>=1.5
+scipy>=1.13
+tensorly>=0.9
+torch>=2.2
+xgboost>=2.1
