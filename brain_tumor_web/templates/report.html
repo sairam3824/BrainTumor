@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Brain Tumor Studio | Report{% endblock %}
+
+{% block content %}
+<main class="report-page" data-report-page="true" data-report-id="{{ report_id or '' }}">
+  <section class="glass-card report-hero">
+    <div>
+      <p class="card-label">Analysis Report</p>
+      <h1 id="report-title">Loading report…</h1>
+      <p id="report-subtitle">Fetching the selected report from local history.</p>
+    </div>
+    <div class="report-actions">
+      <a class="button button-secondary" href="{{ url_for('analyze') }}">New Analysis</a>
+      <a class="button button-ghost" href="{{ url_for('history_page') }}">View History</a>
+    </div>
+  </section>
+
+  <section id="report-empty" class="glass-card empty-state" hidden>
+    <h2>No report available yet</h2>
+    <p>Run an analysis from the Analyze page to create a report.</p>
+    <a class="button button-primary" href="{{ url_for('analyze') }}">Go to Analyze</a>
+  </section>
+
+  <section id="report-body" hidden>
+    <div class="report-grid">
+      <article class="glass-card report-card">
+        <p class="card-label">Summary</p>
+        <dl class="summary-grid">
+          <div><dt>Predicted label</dt><dd id="report-label">-</dd></div>
+          <div><dt>Model</dt><dd id="report-model">-</dd></div>
+          <div><dt>Top confidence</dt><dd id="report-confidence">-</dd></div>
+          <div><dt>Created</dt><dd id="report-created">-</dd></div>
+        </dl>
+        <p id="report-note" class="report-note"></p>
+      </article>
+
+      <article class="glass-card report-card">
+        <p class="card-label">Reference</p>
+        <dl class="summary-grid">
+          <div><dt id="report-accuracy-label">Notebook reference accuracy</dt><dd id="report-accuracy">-</dd></div>
+          <div><dt>Analysis ID</dt><dd id="report-id-value">-</dd></div>
+        </dl>
+      </article>
+    </div>
+
+    <div class="report-grid report-grid-wide">
+      <article class="glass-card report-card">
+        <p class="card-label">Uploaded Image</p>
+        <img id="report-input-image" class="report-image" alt="Uploaded MRI image" style="display:none;">
+      </article>
+      <article class="glass-card report-card">
+        <p class="card-label">Grad-CAM Overlay</p>
+        <img id="report-gradcam-image" class="report-image" alt="Grad-CAM overlay" style="display:none;">
+        <p id="report-gradcam-note" class="viz-note"></p>
+      </article>
+    </div>
+
+    <article class="glass-card report-card">
+      <p class="card-label">Class Probabilities</p>
+      <div id="report-scores" class="scores"></div>
+    </article>
+  </section>
+</main>
+{% endblock %}
