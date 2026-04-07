@@ -55,6 +55,15 @@ function initAnalyzePage() {
     gradcamImage: document.getElementById("gradcam-image"),
     gradcamEmpty: document.getElementById("gradcam-empty"),
     gradcamNote: document.getElementById("gradcam-note"),
+    tdaRoiImage: document.getElementById("tda-roi-image"),
+    tdaRoiEmpty: document.getElementById("tda-roi-empty"),
+    tdaRoiNote: document.getElementById("tda-roi-note"),
+    explainabilityPanel: document.getElementById("explainability-panel"),
+    metricIou: document.getElementById("metric-iou"),
+    metricDice: document.getElementById("metric-dice"),
+    metricCoverage: document.getElementById("metric-coverage"),
+    metricSpecificity: document.getElementById("metric-specificity"),
+    explainabilityNote: document.getElementById("explainability-note"),
     formFeedback: document.getElementById("form-feedback"),
   };
 
@@ -108,13 +117,19 @@ function initAnalyzePage() {
 
   function clearResult() {
     els.predictionLabel.textContent = "Running analysis…";
-    els.predictionSubtitle.textContent = "Generating probabilities, Grad-CAM, and a persistent report.";
+    els.predictionSubtitle.textContent = "Generating probabilities, GradCAM++, TDA ROI, and explainability metrics.";
     els.modelUsed.textContent = "Working…";
     els.scores.innerHTML = "";
     els.gradcamImage.removeAttribute("src");
     els.gradcamImage.style.display = "none";
     els.gradcamEmpty.hidden = false;
-    els.gradcamNote.textContent = "Creating the Grad-CAM explainer overlay.";
+    els.gradcamNote.textContent = "Creating the GradCAM++ explainer overlay.";
+    if (els.tdaRoiImage) {
+      els.tdaRoiImage.removeAttribute("src");
+      els.tdaRoiImage.style.display = "none";
+    }
+    if (els.tdaRoiEmpty) els.tdaRoiEmpty.hidden = false;
+    if (els.explainabilityPanel) els.explainabilityPanel.style.display = "none";
   }
 
   function renderResult(payload) {
@@ -122,6 +137,8 @@ function initAnalyzePage() {
     els.predictionSubtitle.textContent = payload.prediction_note;
     els.modelUsed.textContent = payload.model_label;
     renderScores(els.scores, payload.scores || []);
+
+    // GradCAM++
     if (payload.gradcam_image_url) {
       els.gradcamImage.src = payload.gradcam_image_url;
       els.gradcamImage.style.display = "block";
@@ -130,7 +147,32 @@ function initAnalyzePage() {
       els.gradcamImage.style.display = "none";
       els.gradcamEmpty.hidden = false;
     }
-    els.gradcamNote.textContent = payload.gradcam_note || "Grad-CAM unavailable.";
+    els.gradcamNote.textContent = payload.gradcam_note || "GradCAM++ unavailable.";
+
+    // TDA ROI
+    if (els.tdaRoiImage && payload.tda_roi_image_url) {
+      els.tdaRoiImage.src = payload.tda_roi_image_url;
+      els.tdaRoiImage.style.display = "block";
+      if (els.tdaRoiEmpty) els.tdaRoiEmpty.hidden = true;
+    } else if (els.tdaRoiImage) {
+      els.tdaRoiImage.style.display = "none";
+      if (els.tdaRoiEmpty) els.tdaRoiEmpty.hidden = false;
+    }
+
+    // Explainability Metrics
+    const metrics = payload.explainability_metrics;
+    if (metrics && els.explainabilityPanel) {
+      els.explainabilityPanel.style.display = "block";
+      els.metricIou.textContent = (metrics.iou * 100).toFixed(1) + "%";
+      els.metricDice.textContent = (metrics.dice * 100).toFixed(1) + "%";
+      els.metricCoverage.textContent = (metrics.roi_coverage * 100).toFixed(1) + "%";
+      els.metricSpecificity.textContent = (metrics.cam_specificity * 100).toFixed(1) + "%";
+      if (els.explainabilityNote && payload.explainability_note) {
+        els.explainabilityNote.textContent = payload.explainability_note;
+      }
+    } else if (els.explainabilityPanel) {
+      els.explainabilityPanel.style.display = "none";
+    }
   }
 
   async function pollHealth() {
@@ -261,9 +303,21 @@ async function initHistoryPage() {
                       ? `
                         <figure class="history-media-tile">
                           <a href="${item.gradcam_image_url}" target="_blank" rel="noopener noreferrer">
-                            <img src="${item.gradcam_image_url}" alt="Grad-CAM preview">
+                            <img src="${item.gradcam_image_url}" alt="GradCAM++ preview">
                           </a>
-                          <figcaption>Grad-CAM</figcaption>
+                          <figcaption>GradCAM++</figcaption>
+                        </figure>
+                      `
+                      : ""
+                  }
+                  ${
+                    item.tda_roi_image_url
+                      ? `
+                        <figure class="history-media-tile">
+                          <a href="${item.tda_roi_image_url}" target="_blank" rel="noopener noreferrer">
+                            <img src="${item.tda_roi_image_url}" alt="TDA ROI preview">
+                          </a>
+                          <figcaption>TDA ROI</figcaption>
                         </figure>
                       `
                       : ""

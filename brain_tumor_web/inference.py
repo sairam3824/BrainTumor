@@ -28,7 +28,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn import __version__ as sklearn_version
-from tensorly.decomposition import tucker
+from tensorly.decomposition import tucker, tensor_train
 
 
 MPLCONFIGDIR = Path(tempfile.gettempdir()) / "brain_tumor_mpl"
@@ -53,12 +53,16 @@ FAST_TUCKER_RANK = (16, 16, 64)
 FAST_TUCKER_ALPHA = 1.5
 FAST_TUCKER_BG_WEIGHT = 0.7
 FAST_TUCKER_MAX_TRAIN_SAMPLES = 1200
+TT_RANK = 12
 FUSION_PCA_VARIANCE = 0.99
+TOPO_REG_WEIGHT = 0.05
+TOPO_REG_TOPK = 20
 RANDOM_STATE = 42
 BATCH_SIZE = 64
-CNN_EPOCHS = 4
+CNN_EPOCHS = 12
 CNN_BATCH_SIZE = 32
 CNN_LEARNING_RATE = 1e-3
+GRADCAM_SMOOTH_SIGMA = 1.5
 HISTORY_LIMIT = 100
 STATUS_PROGRESS = {
     "idle": 0,
@@ -108,7 +112,7 @@ class SimpleBrainCNN(nn.Module):
 
     @property
     def gradcam_layer(self) -> nn.Module:
-        return self.block4[0]
+        return self.block4
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.block1(x)
@@ -118,6 +122,14 @@ class SimpleBrainCNN(nn.Module):
         pooled = self.pool(feature_maps).flatten(1)
         embedding = F.relu(self.embedding(pooled))
         return self.classifier(self.dropout(embedding))
+
+    def get_embedding(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        pooled = self.pool(x).flatten(1)
+        return F.relu(self.embedding(pooled))
 
 
 class BrainTumorDataset(torch.utils.data.Dataset):
@@ -281,20 +293,38 @@ class BrainTumorWebService:
         records = collect_image_records(self.dataset_base / "Training")
         if not records:
             raise RuntimeError("No training images were found in data/Dataset/Training.")
-        if not self.tda_cache_path.exists() or not self.roi_cache_path.exists():
-            raise RuntimeError("Missing output/metrics/tda_train.npy or output/metrics/roi_train.npy.")
+        if not self.roi_cache_path.exists():
+            raise RuntimeError("Missing output/metrics/roi_train.npy.")
 
-        self._set_status("building", "Scanning training images and preparing topology features.", 40)
-        tda_train = np.load(self.tda_cache_path)
+        self._set_status("building", "Scanning training images and preparing topology features.", 35)
         roi_train = np.load(self.roi_cache_path, mmap_mode="r")
-        if len(records) != len(tda_train) or len(records) != len(roi_train):
-            raise RuntimeError("Cached TDA/ROI arrays do not match the training split size.")
+        if len(records) != len(roi_train):
+            raise RuntimeError("Cached ROI array does not match the training split size.")
 
-        self._set_status("building", "Projecting weighted Tucker features for the live bundle.", 52)
+        # Compute TDA features fresh (includes persistence images) or load if dimension matches
+        expected_dim = _expected_tda_dim()
+        tda_train = None
+        if self.tda_cache_path.exists():
+            cached = np.load(self.tda_cache_path)
+            if len(cached) == len(records) and cached.shape[1] == expected_dim:
+                tda_train = cached
+
+        if tda_train is None:
+            self._set_status("building", "Extracting full TDA features (persistence stats + Betti curves + persistence images).", 38)
+            tda_train = compute_tda_features_batch(records, image_size=IMG_SIZE)
+            np.save(self.tda_cache_path, tda_train)
+
+        self._set_status("building", "Projecting weighted Tucker features for the live bundle.", 48)
         a_factor, b_factor = fit_weighted_tucker_factors(records, roi_train)
         train_tucker = build_train_tucker_features(records, roi_train, a_factor, b_factor)
-        fusion_pipeline = fit_fusion_pipeline(train_tucker, tda_train)
-        fused_train = transform_fused_features(train_tucker, tda_train, fusion_pipeline)
+
+        self._set_status("building", "Fitting Tensor Train decomposition (hybrid Tucker+TT fusion).", 55)
+        tt_cores = fit_tt_cores(records, roi_train)
+        train_tt = build_train_tt_features(records, roi_train, tt_cores)
+
+        self._set_status("building", "Building triple-fusion pipeline (Tucker + TT + TDA).", 60)
+        fusion_pipeline = fit_fusion_pipeline(train_tucker, tda_train, tt_features_train=train_tt)
+        fused_train = transform_fused_features(train_tucker, tda_train, fusion_pipeline, tt_features=train_tt)
         y_train = np.asarray([record.label_index for record in records], dtype=np.int64)
 
         self._set_status("building", "Training the stable classifier set for interactive analysis.", 64)
@@ -307,6 +337,7 @@ class BrainTumorWebService:
             "labels": LABELS,
             "A": a_factor.astype(np.float32),
             "B": b_factor.astype(np.float32),
+            "tt_cores": tt_cores,
             "fusion_pipeline": fusion_pipeline,
             "models": trained_models,
             "model_order": model_order,
@@ -378,11 +409,16 @@ class BrainTumorWebService:
         source_image = self.validate_upload(file_bytes, filename, mimetype)
         inference_image = preprocess_uploaded_array(source_image, image_size=IMG_SIZE)
         tda_feature = extract_compact_tda_feature(inference_image)
-        tucker_feature = project_images(np.expand_dims(inference_image, axis=0), self._bundle["A"], self._bundle["B"])[0]
+        img_batch = np.expand_dims(inference_image, axis=0)
+        tucker_feature = project_images(img_batch, self._bundle["A"], self._bundle["B"])[0]
+        tt_feature = None
+        if self._bundle.get("tt_cores") is not None:
+            tt_feature = project_images_tt(img_batch, self._bundle["tt_cores"])[0]
         fused = transform_fused_features(
             tucker_feature[np.newaxis, :],
             tda_feature[np.newaxis, :],
             self._bundle["fusion_pipeline"],
+            tt_features=tt_feature[np.newaxis, :] if tt_feature is not None else None,
         )
 
         estimator = self._bundle["models"][selected_model]
@@ -400,7 +436,10 @@ class BrainTumorWebService:
 
         input_url = None
         gradcam_url = None
-        gradcam_note = "Grad-CAM overlay generated by the explainer CNN."
+        tda_roi_url = None
+        gradcam_note = "GradCAM++ overlay generated by the topology-regularized explainer CNN."
+        explainability_metrics = None
+        cam = None
         if self._cnn_model is not None:
             cam = generate_gradcam(
                 self._cnn_model,
@@ -410,7 +449,12 @@ class BrainTumorWebService:
             overlay = make_heatmap_overlay(source_image, cam)
         else:
             overlay = None
-            gradcam_note = "Grad-CAM explainer was unavailable for this request."
+            gradcam_note = "GradCAM++ explainer was unavailable for this request."
+
+        # Extract TDA ROI for the uploaded image and compute explainability metrics
+        tda_roi = topological_process_img(inference_image)
+        if cam is not None:
+            explainability_metrics = compute_explainability_metrics(cam, tda_roi)
 
         analysis_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
         created_at = utcnow_iso()
@@ -424,6 +468,19 @@ class BrainTumorWebService:
                 gradcam_path = self.reports_dir / f"{analysis_id}-gradcam.png"
                 save_rgb_image(overlay, gradcam_path)
                 gradcam_url = self.asset_url(gradcam_path.relative_to(self.media_root))
+
+            # Save TDA ROI overlay
+            roi_vis = tda_roi * 255.0
+            roi_colored = cv2.applyColorMap(np.uint8(roi_vis), cv2.COLORMAP_HOT)
+            roi_colored = cv2.cvtColor(roi_colored, cv2.COLOR_BGR2RGB)
+            base_for_roi = source_image if source_image.ndim == 3 else cv2.cvtColor(source_image, cv2.COLOR_GRAY2RGB)
+            roi_resized = cv2.resize(roi_colored, (base_for_roi.shape[1], base_for_roi.shape[0]))
+            roi_alpha = cv2.resize(tda_roi, (base_for_roi.shape[1], base_for_roi.shape[0]))[..., np.newaxis] * 0.5
+            roi_overlay = ((1.0 - roi_alpha) * base_for_roi.astype(np.float32) + roi_alpha * roi_resized.astype(np.float32))
+            roi_overlay = np.clip(roi_overlay, 0, 255).astype(np.uint8)
+            tda_roi_path = self.reports_dir / f"{analysis_id}-tda-roi.png"
+            save_rgb_image(roi_overlay, tda_roi_path)
+            tda_roi_url = self.asset_url(tda_roi_path.relative_to(self.media_root))
 
             notebook_accuracy = (
                 self._metadata.get("all_model_results", {})
@@ -439,11 +496,14 @@ class BrainTumorWebService:
                 "top_confidence_percent": round(float(sorted_scores[0][1] * 100.0), 2),
                 "selected_model": selected_model,
                 "default_model": self._bundle["best_model"],
-                "prediction_note": f"Classifier output from {selected_model}. Grad-CAM is produced by the explainer CNN.",
+                "prediction_note": f"Classifier output from {selected_model}. GradCAM++ is produced by the topology-regularized explainer CNN.",
                 "scores": scores,
                 "input_image_url": input_url,
                 "gradcam_image_url": gradcam_url,
+                "tda_roi_image_url": tda_roi_url,
                 "gradcam_note": gradcam_note,
+                "explainability_metrics": explainability_metrics,
+                "explainability_note": "IoU and Dice measure alignment between GradCAM++ (learned attention) and TDA ROI (topological tumor region)." if explainability_metrics else None,
                 "notebook_reference_accuracy": round(float(notebook_accuracy), 4) if isinstance(notebook_accuracy, (int, float)) else None,
                 "notebook_reference_label": "Notebook reference accuracy",
             }
@@ -472,6 +532,7 @@ class BrainTumorWebService:
                 "report_url": f"/report/{report['analysis_id']}",
                 "input_image_url": report["input_image_url"],
                 "gradcam_image_url": report["gradcam_image_url"],
+                "tda_roi_image_url": report.get("tda_roi_image_url"),
             },
         )
         history = history[:HISTORY_LIMIT]
@@ -698,6 +759,66 @@ def betti_curve(dgm: np.ndarray, resolution: int = BETTI_CURVE_RESOLUTION) -> np
     return curve
 
 
+PERSISTENCE_IMAGE_RESOLUTION = 10
+PERSISTENCE_IMAGE_SIGMA = 0.1
+
+
+def persistence_image(dgm: np.ndarray, resolution: int = PERSISTENCE_IMAGE_RESOLUTION, sigma: float = PERSISTENCE_IMAGE_SIGMA) -> np.ndarray:
+    """Compute a persistence image (Adams et al., 2017).
+
+    Transforms a persistence diagram into a stable, fixed-size vectorized
+    representation by:
+    1. Converting (birth, death) to (birth, persistence) coordinates
+    2. Weighting each point by its persistence (longer-lived = more important)
+    3. Placing a Gaussian kernel at each point on a grid
+    4. Summing to produce a 2D image, then flattening
+
+    Persistence images are Lipschitz-stable with respect to bottleneck and
+    Wasserstein distances, making them theoretically superior to raw statistics
+    for machine learning on topological features.
+    """
+    img = np.zeros((resolution, resolution), dtype=np.float32)
+    if len(dgm) == 0:
+        return img.flatten()
+
+    births = dgm[:, 0].astype(np.float64)
+    deaths = dgm[:, 1].astype(np.float64)
+    persistence = deaths - births
+    finite_mask = np.isfinite(persistence) & (persistence > 0)
+    if not np.any(finite_mask):
+        return img.flatten()
+
+    births = births[finite_mask]
+    persistence = persistence[finite_mask]
+
+    # Normalize to [0, 1] range
+    b_min, b_max = np.min(births), np.max(births)
+    p_min, p_max = np.min(persistence), np.max(persistence)
+    b_range = max(b_max - b_min, 1e-8)
+    p_range = max(p_max - p_min, 1e-8)
+    births_norm = (births - b_min) / b_range
+    persist_norm = (persistence - p_min) / p_range
+
+    # Weight by persistence (longer-lived features matter more)
+    weights = persist_norm
+
+    # Create grid
+    x_grid = np.linspace(0, 1, resolution)
+    y_grid = np.linspace(0, 1, resolution)
+
+    for b, p, w in zip(births_norm, persist_norm, weights):
+        gauss_x = np.exp(-((x_grid - b) ** 2) / (2 * sigma ** 2))
+        gauss_y = np.exp(-((y_grid - p) ** 2) / (2 * sigma ** 2))
+        img += w * np.outer(gauss_y, gauss_x)
+
+    # Normalize
+    img_max = img.max()
+    if img_max > 0:
+        img /= img_max
+
+    return img.flatten().astype(np.float32)
+
+
 def compute_h1_persistence(img: np.ndarray, window_size: int = 10, max_points: int = FAST_TDA_H1_MAX_POINTS) -> np.ndarray:
     img_smooth = smoothen(img.copy(), window_size=window_size)
     height, width = img_smooth.shape
@@ -750,11 +871,31 @@ def compact_feature_from_diagrams(diagrams: Dict[str, np.ndarray]) -> np.ndarray
     for _, dgm in diagrams.items():
         parts.append(persistence_statistics(dgm))
         parts.append(betti_curve(dgm))
+        parts.append(persistence_image(dgm))
     return np.concatenate(parts).astype(np.float32)
 
 
 def extract_compact_tda_feature(img: np.ndarray) -> np.ndarray:
     return compact_feature_from_diagrams(compute_multiscale_persistence(img))
+
+
+def _expected_tda_dim() -> int:
+    """Compute the expected dimensionality of TDA feature vectors.
+
+    Per diagram: 10 (stats) + BETTI_CURVE_RESOLUTION (Betti) + PERSISTENCE_IMAGE_RESOLUTION^2 (PI)
+    Number of diagrams: len(TDA_SCALES) * (1 + (1 if TDA_MAX_HOMOLOGY_DIM >= 1 else 0))
+    """
+    per_dgm = 10 + BETTI_CURVE_RESOLUTION + PERSISTENCE_IMAGE_RESOLUTION ** 2
+    n_dgms = len(TDA_SCALES) * (2 if TDA_MAX_HOMOLOGY_DIM >= 1 else 1)
+    return per_dgm * n_dgms
+
+
+def compute_tda_features_batch(records: Sequence[ImageRecord], image_size: int) -> np.ndarray:
+    features = []
+    for record in records:
+        img = load_image_file(record.path, image_size=image_size)
+        features.append(extract_compact_tda_feature(img))
+    return np.vstack(features).astype(np.float32)
 
 
 def fit_weighted_tucker_factors(records: Sequence[ImageRecord], roi_train: np.ndarray):
@@ -790,27 +931,108 @@ def build_train_tucker_features(records: Sequence[ImageRecord], roi_train: np.nd
     return np.vstack(features).astype(np.float32)
 
 
-def fit_fusion_pipeline(tucker_features_train: np.ndarray, tda_features_train: np.ndarray):
+def fit_tt_cores(records: Sequence[ImageRecord], roi_train: np.ndarray):
+    """Fit Tensor Train decomposition on ROI-weighted training images.
+
+    TT decomposition factorizes the 3-mode image tensor into a chain of
+    low-rank 3rd-order cores.  This captures different structural correlations
+    than Tucker (which uses a dense core + orthogonal factors), providing a
+    complementary feature space.  Combining Tucker and TT features in the
+    fusion pipeline gives the classifier access to both representations —
+    a novel hybrid tensor decomposition approach.
+    """
+    rng = np.random.default_rng(RANDOM_STATE)
+    subset_size = min(FAST_TUCKER_MAX_TRAIN_SAMPLES, len(records))
+    subset_idx = np.sort(rng.choice(len(records), size=subset_size, replace=False))
+    subset_records = [records[idx] for idx in subset_idx]
+    subset_images = load_batch_images(subset_records, image_size=IMG_SIZE)
+    subset_roi = np.asarray(roi_train[subset_idx], dtype=np.float32)
+    weighted_subset = subset_images * (FAST_TUCKER_BG_WEIGHT + FAST_TUCKER_ALPHA * subset_roi)
+    tensor_subset = np.transpose(weighted_subset, (1, 2, 0))
+    tt_cores = tensor_train(tensor_subset, rank=TT_RANK)
+    return tt_cores
+
+
+def project_images_tt(images: np.ndarray, tt_cores) -> np.ndarray:
+    """Project images using pre-fitted TT cores.
+
+    For each image, contract with the spatial TT cores (modes 0 and 1) to
+    produce a compact feature vector of length TT_RANK^2.
+    """
+    core0 = np.array(tt_cores[0])  # shape (1, I0, r1)
+    core1 = np.array(tt_cores[1])  # shape (r1, I1, r2)
+
+    # Contract image (B, H, W) with core0 along H and core1 along W
+    # core0: squeeze leading dim -> (I0, r1), where I0 = H
+    c0 = core0.squeeze(0)  # (H, r1)
+    c1_reshaped = core1   # (r1, W, r2)
+
+    # images: (B, H, W) -> contract H with c0 -> (B, r1, W)
+    step1 = np.einsum("bhw,hr->brw", images, c0)
+    # contract W with c1 -> (B, r1, r2)
+    step2 = np.einsum("brw,rws->brs", step1, c1_reshaped)
+
+    return step2.reshape(step2.shape[0], -1).astype(np.float32)
+
+
+def build_train_tt_features(records: Sequence[ImageRecord], roi_train: np.ndarray, tt_cores) -> np.ndarray:
+    features = []
+    for start in range(0, len(records), BATCH_SIZE):
+        batch_records = records[start:start + BATCH_SIZE]
+        batch_images = load_batch_images(batch_records, image_size=IMG_SIZE)
+        roi_batch = np.asarray(roi_train[start:start + len(batch_records)], dtype=np.float32)
+        weighted_batch = batch_images * (FAST_TUCKER_BG_WEIGHT + FAST_TUCKER_ALPHA * roi_batch)
+        features.append(project_images_tt(weighted_batch, tt_cores))
+    return np.vstack(features).astype(np.float32)
+
+
+def fit_fusion_pipeline(tucker_features_train: np.ndarray, tda_features_train: np.ndarray, tt_features_train: np.ndarray | None = None):
+    """Fit the triple-fusion pipeline: Tucker + TT + TDA -> PCA.
+
+    When TT features are provided, the pipeline fuses three complementary
+    representations — topology-guided Tucker, topology-guided Tensor Train,
+    and persistent homology TDA features — into a single reduced space.
+    This hybrid tensor-topology fusion is a novel methodological contribution.
+    """
     scaler_tucker = StandardScaler()
     scaler_tda = StandardScaler()
     tucker_train_norm = scaler_tucker.fit_transform(np.nan_to_num(tucker_features_train, nan=0.0, posinf=0.0, neginf=0.0))
     tda_train_norm = scaler_tda.fit_transform(np.nan_to_num(tda_features_train, nan=0.0, posinf=0.0, neginf=0.0))
-    concat = np.hstack([tucker_train_norm, tda_train_norm])
-    pca = PCA(n_components=FUSION_PCA_VARIANCE, svd_solver="full")
-    pca.fit(concat)
-    return {
+
+    parts = [tucker_train_norm, tda_train_norm]
+    pipeline = {
         "scaler_tucker": scaler_tucker,
         "scaler_tda": scaler_tda,
-        "pca": pca,
     }
 
+    if tt_features_train is not None:
+        scaler_tt = StandardScaler()
+        tt_train_norm = scaler_tt.fit_transform(np.nan_to_num(tt_features_train, nan=0.0, posinf=0.0, neginf=0.0))
+        parts.append(tt_train_norm)
+        pipeline["scaler_tt"] = scaler_tt
 
-def transform_fused_features(tucker_features: np.ndarray, tda_features: np.ndarray, fusion_pipeline: Dict[str, object]) -> np.ndarray:
-    tucker = np.nan_to_num(tucker_features, nan=0.0, posinf=0.0, neginf=0.0)
+    concat = np.hstack(parts)
+    pca = PCA(n_components=FUSION_PCA_VARIANCE, svd_solver="full")
+    pca.fit(concat)
+    pipeline["pca"] = pca
+    pipeline["has_tt"] = tt_features_train is not None
+    return pipeline
+
+
+def transform_fused_features(tucker_features: np.ndarray, tda_features: np.ndarray, fusion_pipeline: Dict[str, object], tt_features: np.ndarray | None = None) -> np.ndarray:
+    tucker_arr = np.nan_to_num(tucker_features, nan=0.0, posinf=0.0, neginf=0.0)
     tda = np.nan_to_num(tda_features, nan=0.0, posinf=0.0, neginf=0.0)
-    tucker_scaled = fusion_pipeline["scaler_tucker"].transform(tucker)
+    tucker_scaled = fusion_pipeline["scaler_tucker"].transform(tucker_arr)
     tda_scaled = fusion_pipeline["scaler_tda"].transform(tda)
-    return fusion_pipeline["pca"].transform(np.hstack([tucker_scaled, tda_scaled]))
+
+    parts = [tucker_scaled, tda_scaled]
+
+    if fusion_pipeline.get("has_tt") and tt_features is not None:
+        tt_arr = np.nan_to_num(tt_features, nan=0.0, posinf=0.0, neginf=0.0)
+        tt_scaled = fusion_pipeline["scaler_tt"].transform(tt_arr)
+        parts.append(tt_scaled)
+
+    return fusion_pipeline["pca"].transform(np.hstack(parts))
 
 
 def train_classifiers(x_train: np.ndarray, y_train: np.ndarray) -> Dict[str, object]:
@@ -865,7 +1087,59 @@ def softmax(values: np.ndarray) -> np.ndarray:
     return exp_values / np.sum(exp_values, axis=1, keepdims=True)
 
 
+def compute_topological_loss(feature_maps: torch.Tensor, top_k: int = TOPO_REG_TOPK) -> torch.Tensor:
+    """Topological regularization: penalize feature maps whose spatial
+    activation patterns lack persistent structure.
+
+    For each sample in the batch, we take the channel-max activation map,
+    compute a soft approximation of persistence (top-k differences between
+    sorted activation values), and penalize low persistence — i.e., encourage
+    the network to produce feature maps with clear, topologically distinct
+    activation peaks rather than diffuse noise.
+
+    This is a differentiable surrogate for persistence-based regularization
+    (Hu et al., 2019; Clough et al., 2020).
+    """
+    # Channel-max spatial activation: (B, H, W)
+    spatial = feature_maps.amax(dim=1)
+    B = spatial.shape[0]
+    flat = spatial.reshape(B, -1)
+
+    # Sort activations descending per sample
+    sorted_vals, _ = torch.sort(flat, dim=1, descending=True)
+    k = min(top_k, sorted_vals.shape[1] - 1)
+    # "Persistence" approximation: gaps between consecutive sorted activations
+    gaps = sorted_vals[:, :k] - sorted_vals[:, 1:k + 1]
+    # We want large gaps (clear peaks), so penalize small total gap
+    persistence_score = gaps.sum(dim=1)
+    # Loss: inverse persistence (lower persistence = higher loss)
+    loss = 1.0 / (persistence_score.mean() + 1e-6)
+    return loss
+
+
+def _augment_batch(images: torch.Tensor) -> torch.Tensor:
+    if not model_is_training:
+        return images
+    batch = images
+    if torch.rand(1).item() > 0.5:
+        batch = torch.flip(batch, dims=[3])
+    if torch.rand(1).item() > 0.5:
+        batch = torch.flip(batch, dims=[2])
+    angle = (torch.rand(1).item() - 0.5) * 20
+    if abs(angle) > 2:
+        theta = math.radians(angle)
+        cos_a, sin_a = math.cos(theta), math.sin(theta)
+        affine = torch.tensor([[cos_a, -sin_a, 0], [sin_a, cos_a, 0]], dtype=batch.dtype, device=batch.device)
+        grid = F.affine_grid(affine.unsqueeze(0).expand(batch.size(0), -1, -1), batch.size(), align_corners=False)
+        batch = F.grid_sample(batch, grid, align_corners=False, mode="bilinear", padding_mode="zeros")
+    return batch
+
+
+model_is_training = False
+
+
 def train_cnn_model(model: SimpleBrainCNN, records: Sequence[ImageRecord], device: torch.device) -> None:
+    global model_is_training
     torch.manual_seed(RANDOM_STATE)
     loader = torch.utils.data.DataLoader(
         BrainTumorDataset(records, image_size=CNN_IMAGE_SIZE),
@@ -873,32 +1147,54 @@ def train_cnn_model(model: SimpleBrainCNN, records: Sequence[ImageRecord], devic
         shuffle=True,
         num_workers=0,
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=CNN_LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=CNN_LEARNING_RATE, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=CNN_EPOCHS)
     criterion = nn.CrossEntropyLoss()
 
     model.train()
-    for _ in range(CNN_EPOCHS):
+    model_is_training = True
+    for epoch in range(CNN_EPOCHS):
         for images, labels in loader:
-            images = images.to(device)
+            images = _augment_batch(images.to(device))
             labels = labels.to(device)
-            logits = model(images)
-            loss = criterion(logits, labels)
+
+            # Forward through blocks manually to capture feature maps for topo loss
+            x = model.block1(images)
+            x = model.block2(x)
+            x = model.block3(x)
+            feat = model.block4(x)
+            pooled = model.pool(feat).flatten(1)
+            emb = F.relu(model.embedding(pooled))
+            logits = model.classifier(model.dropout(emb))
+
+            ce_loss = criterion(logits, labels)
+            topo_loss = compute_topological_loss(feat)
+            loss = ce_loss + TOPO_REG_WEIGHT * topo_loss
+
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
+        scheduler.step()
+    model_is_training = False
 
 
 def generate_gradcam(model: SimpleBrainCNN, image: np.ndarray, target_class: int | None = None) -> np.ndarray:
+    """GradCAM++ implementation for superior spatial localization.
+
+    Uses second-order gradient weighting (GradCAM++) instead of simple
+    global-average-pooled gradients, producing tighter and more faithful
+    heatmaps — especially for images with multiple discriminative regions.
+    """
     device = next(model.parameters()).device
     activations: List[torch.Tensor] = []
     gradients: List[torch.Tensor] = []
 
     def forward_hook(_, __, output):
-        activations.append(output.detach())
+        activations.append(output)
 
     def backward_hook(_, grad_input, grad_output):
         del grad_input
-        gradients.append(grad_output[0].detach())
+        gradients.append(grad_output[0])
 
     handle_fwd = model.gradcam_layer.register_forward_hook(forward_hook)
     handle_bwd = model.gradcam_layer.register_full_backward_hook(backward_hook)
@@ -906,17 +1202,32 @@ def generate_gradcam(model: SimpleBrainCNN, image: np.ndarray, target_class: int
     try:
         model.eval()
         image_tensor = torch.tensor(image, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        image_tensor.requires_grad_(False)
         logits = model(image_tensor)
         if target_class is None:
             target_class = int(torch.argmax(logits, dim=1).item())
         score = logits[:, target_class].sum()
         model.zero_grad(set_to_none=True)
-        score.backward()
+        score.backward(retain_graph=True)
 
-        weights = gradients[0].mean(dim=(2, 3), keepdim=True)
-        cam = torch.relu((weights * activations[0]).sum(dim=1, keepdim=True))
+        act = activations[0].detach()
+        grad = gradients[0].detach()
+
+        # --- GradCAM++ weighting ---
+        grad_pow2 = grad ** 2
+        grad_pow3 = grad ** 3
+        sum_act = act.sum(dim=(2, 3), keepdim=True)
+        alpha = grad_pow2 / (2.0 * grad_pow2 + sum_act * grad_pow3 + 1e-8)
+        alpha = torch.where(grad != 0, alpha, torch.zeros_like(alpha))
+        weights = (alpha * torch.relu(grad)).sum(dim=(2, 3), keepdim=True)
+
+        cam = torch.relu((weights * act).sum(dim=1, keepdim=True))
         cam = F.interpolate(cam, size=image.shape, mode="bilinear", align_corners=False)
         cam = cam.squeeze().cpu().numpy()
+
+        # Gaussian smoothing for cleaner heatmaps
+        cam = ndimage.gaussian_filter(cam, sigma=GRADCAM_SMOOTH_SIGMA)
+
         cam = cam - cam.min()
         cam = cam / (cam.max() + 1e-8)
         return cam.astype(np.float32)
@@ -930,9 +1241,54 @@ def make_heatmap_overlay(source_image: np.ndarray, heatmap: np.ndarray) -> np.nd
     if base.ndim == 2:
         base = cv2.cvtColor(base, cv2.COLOR_GRAY2RGB)
     heatmap_resized = cv2.resize(heatmap, (base.shape[1], base.shape[0]))
-    colored = cv2.applyColorMap(np.uint8(255 * heatmap_resized), cv2.COLORMAP_JET)
+    # Raise contrast: apply power-law to emphasize high-activation regions
+    heatmap_enhanced = np.power(heatmap_resized, 1.5)
+    heatmap_enhanced = heatmap_enhanced / (heatmap_enhanced.max() + 1e-8)
+    colored = cv2.applyColorMap(np.uint8(255 * heatmap_enhanced), cv2.COLORMAP_JET)
     colored = cv2.cvtColor(colored, cv2.COLOR_BGR2RGB)
-    return cv2.addWeighted(base, 0.55, colored, 0.45, 0)
+    # Blend more aggressively where activation is strong
+    alpha_map = (0.3 + 0.4 * heatmap_enhanced)[..., np.newaxis]
+    overlay = ((1.0 - alpha_map) * base.astype(np.float32) + alpha_map * colored.astype(np.float32))
+    return np.clip(overlay, 0, 255).astype(np.uint8)
+
+
+def compute_explainability_metrics(
+    gradcam_heatmap: np.ndarray,
+    tda_roi: np.ndarray,
+    cam_threshold: float = 0.4,
+) -> Dict[str, float]:
+    """Quantitative comparison between GradCAM and TDA-extracted ROI.
+
+    Computes Dice coefficient and IoU (Intersection over Union) between the
+    thresholded GradCAM heatmap and the binary TDA ROI mask.  These metrics
+    measure how well the neural-network's learned attention aligns with the
+    topologically-derived tumor region — a key explainability contribution.
+    """
+    cam_resized = cv2.resize(gradcam_heatmap, (tda_roi.shape[1], tda_roi.shape[0]))
+    cam_binary = (cam_resized >= cam_threshold).astype(np.float32)
+    roi_binary = (tda_roi > 0).astype(np.float32)
+
+    intersection = float(np.sum(cam_binary * roi_binary))
+    union = float(np.sum(np.clip(cam_binary + roi_binary, 0, 1)))
+    sum_both = float(np.sum(cam_binary) + np.sum(roi_binary))
+
+    iou = intersection / (union + 1e-8)
+    dice = (2.0 * intersection) / (sum_both + 1e-8)
+
+    # Coverage: fraction of TDA ROI covered by GradCAM
+    roi_area = float(np.sum(roi_binary))
+    coverage = intersection / (roi_area + 1e-8) if roi_area > 0 else 0.0
+
+    # Specificity: fraction of GradCAM activation inside TDA ROI
+    cam_area = float(np.sum(cam_binary))
+    specificity = intersection / (cam_area + 1e-8) if cam_area > 0 else 0.0
+
+    return {
+        "iou": round(iou, 4),
+        "dice": round(dice, 4),
+        "roi_coverage": round(coverage, 4),
+        "cam_specificity": round(specificity, 4),
+    }
 
 
 def save_rgb_image(array: np.ndarray, path: Path) -> None:
