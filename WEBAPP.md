@@ -2,10 +2,10 @@
 
 ## What it does
 
-- Drag-and-drop or browse to upload an MRI image
-- Choose a classifier, with the notebook best model as the default
-- Run the topology-fused classifier pipeline for prediction
-- Show a Grad-CAM overlay from the explainer CNN
+- Home page with overview and quick links
+- Analyze page with drag-and-drop upload, model selection, progress tracking, and prediction
+- History page for previously completed analyses
+- Grad-CAM overlay from the explainer CNN
 
 ## Run it
 
@@ -15,6 +15,8 @@ python app.py
 ```
 
 Then open [http://localhost:8000](http://localhost:8000).
+
+If `8000` is already occupied, the app automatically falls back to `http://localhost:8001`.
 
 ## One-time preparation
 
@@ -36,3 +38,13 @@ python app.py --prepare
 - The Grad-CAM heatmap comes from the app's CNN explainer, not from the classical model itself
 - The selectable models exposed immediately are the stable sklearn-backed set: `Extra Trees`, `Random Forest`, `SVM`, and `KNN`
 - The default port is `8000` because `5000` is commonly occupied by other macOS services
+
+## Production-style local serve
+
+For a cleaner non-dev launch path:
+
+```bash
+python serve.py
+```
+
+That uses `waitress` on `http://localhost:8000`, and automatically falls back to `http://localhost:8001` if needed.
