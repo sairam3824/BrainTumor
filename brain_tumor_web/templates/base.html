@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Brain Tumor Studio{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body data-page="{{ page }}">
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="{{ url_for('home') }}">
+
+          <span class="brand-copy">
+            <strong>Brain Tumor Studio</strong>
+            <small>Topology-guided MRI analysis</small>
+          </span>
+        </a>
+        <nav class="site-nav">
+          <a class="{% if page == 'home' %}is-active{% endif %}" href="{{ url_for('home') }}">Home</a>
+          <a class="{% if page == 'analyze' %}is-active{% endif %}" href="{{ url_for('analyze') }}">Analyze</a>
+          <a class="{% if page == 'history' %}is-active{% endif %}" href="{{ url_for('history_page') }}">History</a>
+        </nav>
+      </header>
+
+      {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>
